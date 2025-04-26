@@ -80,7 +80,7 @@ if __name__ == "__main__":
     # 単一の質問
     print("Simple question:")
     result = client.generate(
-        "prompt": "AIについて100文字で教えてください"
+        prompt = "AIについて100文字で教えてください"
     )
     print(f"Response: {result['generated_text']}")
     print(f"Model processing time: {result['response_time']:.2f}s")

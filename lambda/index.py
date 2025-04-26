@@ -67,7 +67,7 @@ class LLMClient:
 # 使用例
 if __name__ == "__main__":
     # ngrok URLを設定（実際のURLに置き換えてください）
-    NGROK_URL = "https://fc96-35-227-171-239.ngrok-free.app"
+    NGROK_URL = "https://a72c-34-125-115-70.ngrok-free.app/"
     
     # クライアントの初期化
     client = LLMClient(NGROK_URL)

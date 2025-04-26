@@ -52,7 +52,7 @@ class ChatClient:
 # 使用例
 if __name__ == "__main__":
     # ngrokで割り当てられたURLを設定（実際のngrok URLに変えてね）
-    NGROK_URL = "https://729e-34-23-148-76.ngrok-free.app/"
+    NGROK_URL = "https://729e-34-23-148-76.ngrok-free.app/generate"
     
     # クライアント初期化
     client = ChatClient(NGROK_URL)

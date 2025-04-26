@@ -1,10 +1,14 @@
 # lambda/index.py
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
 import json
 import os
 import boto3
 import re  # 正規表現モジュールをインポート
 from botocore.exceptions import ClientError
 
+# -- 初期設定 --
+app = FastAPI()
 
 # Lambda コンテキストからリージョンを抽出する関数
 def extract_region_from_arn(arn):
@@ -15,35 +19,25 @@ def extract_region_from_arn(arn):
     return "us-east-1"  # デフォルト値
 
 # グローバル変数としてクライアントを初期化（初期値）
-bedrock_client = None
+bedrock_client = boto3.client('bedrock-runtime', region_names=os.environ.get("AWS_REGION", "us-east-1"))
 
 # モデルID
 MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
 
-def lambda_handler(event, context):
-    try:
-        # コンテキストから実行リージョンを取得し、クライアントを初期化
-        global bedrock_client
-        if bedrock_client is None:
-            region = extract_region_from_arn(context.invoked_function_arn)
-            bedrock_client = boto3.client('bedrock-runtime', region_name=region)
-            print(f"Initialized Bedrock client in region: {region}")
+# -- データモデル --
+class ChatRequest(BaseModel):
+    message: str
+    conversationHistory: list = []
+
+# -- エンドポイント --    
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    try:        
+        # ユーザーメッセージを取得
+        message = request.message
+        conversation_history = request.conversationHistory or []
         
-        print("Received event:", json.dumps(event))
-        
-        # Cognitoで認証されたユーザー情報を取得
-        user_info = None
-        if 'requestContext' in event and 'authorizer' in event['requestContext']:
-            user_info = event['requestContext']['authorizer']['claims']
-            print(f"Authenticated user: {user_info.get('email') or user_info.get('cognito:username')}")
-        
-        # リクエストボディの解析
-        body = json.loads(event['body'])
-        message = body['message']
-        conversation_history = body.get('conversationHistory', [])
-        
-        print("Processing message:", message)
-        print("Using model:", MODEL_ID)
+        print(f"Received message: {message}")
         
         # 会話履歴を使用
         messages = conversation_history.copy()
@@ -56,6 +50,7 @@ def lambda_handler(event, context):
         
         # Nova Liteモデル用のリクエストペイロードを構築
         # 会話履歴を含める
+        # Bedrock用のリクエスト形式に変換
         bedrock_messages = []
         for msg in messages:
             if msg["role"] == "user":

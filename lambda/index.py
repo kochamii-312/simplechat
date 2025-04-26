@@ -1,135 +1,64 @@
 # lambda/index.py
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
+# このコードは、ngrokで公開された FastAPIチャットAPIにアクセスするPythonクライアントです
+
+import urllib.request
 import json
-import os
-import boto3
-import re  # 正規表現モジュールをインポート
-from botocore.exceptions import ClientError
+import time
 
-# -- 初期設定 --
-app = FastAPI()
+class ChatClient:
+    """FastAPIチャットAPI クライアントクラス"""
+    
+    def __init__(self, api_url):
+        """
+        初期化
 
-# Lambda コンテキストからリージョンを抽出する関数
-def extract_region_from_arn(arn):
-    # ARN 形式: arn:aws:lambda:region:account-id:function:function-name
-    match = re.search('arn:aws:lambda:([^:]+):', arn)
-    if match:
-        return match.group(1)
-    return "us-east-1"  # デフォルト値
+        Args:
+            api_url (str): API のベース URL(ngrok URL)
+        """
+        self.api_url = api_url.rstrip('/')
+    
+    def generate(self, message, conversation_history=None):
+        """
+        メッセージを送信して応答を受け取る
 
-# グローバル変数としてクライアントを初期化（初期値）
-bedrock_client = boto3.client('bedrock-runtime', region_names=os.environ.get("AWS_REGION", "us-east-1"))
+        Args:
+            message (str): ユーザーからのメッセージ
+            conversation_history (list, optional): 過去の会話履歴
 
-# モデルID
-MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
-
-# -- データモデル --
-class ChatRequest(BaseModel):
-    message: str
-    conversationHistory: list = []
-
-# -- エンドポイント --    
-@app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    try:        
-        # ユーザーメッセージを取得
-        message = request.message
-        conversation_history = request.conversationHistory or []
-        
-        print(f"Received message: {message}")
-        
-        # 会話履歴を使用
-        messages = conversation_history.copy()
-        
-        # ユーザーメッセージを追加
-        messages.append({
-            "role": "user",
-            "content": message
-        })
-        
-        # Nova Liteモデル用のリクエストペイロードを構築
-        # 会話履歴を含める
-        # Bedrock用のリクエスト形式に変換
-        bedrock_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                bedrock_messages.append({
-                    "role": "user",
-                    "content": [{"text": msg["content"]}]
-                })
-            elif msg["role"] == "assistant":
-                bedrock_messages.append({
-                    "role": "assistant", 
-                    "content": [{"text": msg["content"]}]
-                })
-        
-        # invoke_model用のリクエストペイロード
-        request_payload = {
-            "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": 512,
-                "stopSequences": [],
-                "temperature": 0.7,
-                "topP": 0.9
-            }
+        Returns:
+            dict: 応答結果
+        """
+        url = f"{self.api_url}/chat"
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "message": message,
+            "conversationHistory": conversation_history or []
         }
         
-        print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
+        data = json.dumps(payload).encode('utf-8')
         
-        # invoke_model APIを呼び出し
-        response = bedrock_client.invoke_model(
-            modelId=MODEL_ID,
-            body=json.dumps(request_payload),
-            contentType="application/json"
-        )
+        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
         
-        # レスポンスを解析
-        response_body = json.loads(response['body'].read())
-        print("Bedrock response:", json.dumps(response_body, default=str))
+        start_time = time.time()
+        with urllib.request.urlopen(req) as res:
+            body = res.read()
+        total_time = time.time() - start_time
+
+        result = json.loads(body.decode('utf-8'))
+        result["total_request_time"] = total_time
         
-        # 応答の検証
-        if not response_body.get('output') or not response_body['output'].get('message') or not response_body['output']['message'].get('content'):
-            raise Exception("No response content from the model")
-        
-        # アシスタントの応答を取得
-        assistant_response = response_body['output']['message']['content'][0]['text']
-        
-        # アシスタントの応答を会話履歴に追加
-        messages.append({
-            "role": "assistant",
-            "content": assistant_response
-        })
-        
-        # 成功レスポンスの返却
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                "Access-Control-Allow-Methods": "OPTIONS,POST"
-            },
-            "body": json.dumps({
-                "success": True,
-                "response": assistant_response,
-                "conversationHistory": messages
-            })
-        }
-        
-    except Exception as error:
-        print("Error:", str(error))
-        
-        return {
-            "statusCode": 500,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                "Access-Control-Allow-Methods": "OPTIONS,POST"
-            },
-            "body": json.dumps({
-                "success": False,
-                "error": str(error)
-            })
-        }
+        return result
+
+# 使用例
+if __name__ == "__main__":
+    # ngrokで割り当てられたURLを設定（実際のngrok URLに変えてね）
+    NGROK_URL = "https://729e-34-23-148-76.ngrok-free.app/"
+    
+    # クライアント初期化
+    client = ChatClient(NGROK_URL)
+    
+    # 単一メッセージ送信
+    print("Simple chat:")
+    result = client.generate("AIについて100文字で教えてください。")
+    print(f"Assistant's Response: {result['response']}")
+    print(f"Total request time: {result['total_request_time']:.2f}s")
